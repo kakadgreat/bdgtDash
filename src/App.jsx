@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react'
 import { NavLink, Routes, Route } from 'react-router-dom'
 import Papa from 'papaparse'
@@ -5,7 +6,7 @@ import Papa from 'papaparse'
 const currency = (n) => (Number(n)||0).toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
-// Seed data with Day-Month-Year format
+// Seed data (DD-MMM-YYYY)
 const seedCategories = [
   { id: 'cat-utilities', name: 'Utilities', type: 'Expense' },
   { id: 'cat-insurance', name: 'Insurance', type: 'Expense' },
@@ -17,36 +18,120 @@ const seedCategories = [
   { id: 'cat-misc', name: 'Misc', type: 'Expense' },
 ]
 const seedIncome = [
-  { id: 'inc-1', date: '01-Jul-2025', source: 'Paycheck', amount: 2500, tags: ['salary'] },
-  { id: 'inc-2', date: '15-Jul-2025', source: 'Paycheck', amount: 2500, tags: ['salary'] },
-  { id: 'inc-3', date: '20-Jul-2025', source: 'Freelance', amount: 600, tags: ['side'] },
+  { id: crypto.randomUUID(), date: '01-Jul-2025', source: 'Paycheck', amount: 2500, tags: 'salary' },
+  { id: crypto.randomUUID(), date: '15-Jul-2025', source: 'Paycheck', amount: 2500, tags: 'salary' },
+  { id: crypto.randomUUID(), date: '20-Jul-2025', source: 'Freelance', amount: 600, tags: 'side' },
 ]
 const seedBills = [
-  { id: 'bill-1', due: '20-Jul-2025', name: 'Electricity', category: 'Utilities', amount: 150, status: 'due' },
-  { id: 'bill-2', due: '25-Jul-2025', name: 'Internet', category: 'Utilities', amount: 80, status: 'paid' },
-  { id: 'bill-3', due: '10-Jul-2025', name: 'Allstate Insurance', category: 'Insurance', amount: 460, status: 'paid' },
-  { id: 'bill-4', due: '05-Jul-2025', name: 'Groceries (weekly)', category: 'Groceries', amount: 200, status: 'due' },
+  { id: crypto.randomUUID(), due: '20-Jul-2025', name: 'Electricity', category: 'Utilities', amount: 150, status: 'due' },
+  { id: crypto.randomUUID(), due: '25-Jul-2025', name: 'Internet', category: 'Utilities', amount: 80, status: 'paid' },
+  { id: crypto.randomUUID(), due: '10-Jul-2025', name: 'Allstate Insurance', category: 'Insurance', amount: 460, status: 'paid' },
+  { id: crypto.randomUUID(), due: '05-Jul-2025', name: 'Groceries (weekly)', category: 'Groceries', amount: 200, status: 'due' },
 ]
+
+// ---- Helpers ----
+const toDDMMMYYYY = (raw) => {
+  if (!raw) return ''
+  const s = String(raw).trim()
+  // try 2025-07-05
+  let d = new Date(s)
+  if (isNaN(d)) {
+    // try MM/DD/YYYY
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (m) d = new Date(`${m[2]}/${m[1]}/${m[3]}`)
+  }
+  if (isNaN(d)) {
+    // try DD-MMM-YYYY already
+    const parts = s.split('-')
+    if (parts.length===3 && parts[1].length===3) return s
+    return s // last resort: leave as-is
+  }
+  const dd = String(d.getDate()).padStart(2,'0')
+  const mmm = months[d.getMonth()]
+  const yyyy = d.getFullYear()
+  return `${dd}-${mmm}-${yyyy}`
+}
+
+const detectType = (headers) => {
+  const h = headers.map(x=> String(x).trim().toLowerCase())
+  const hasIncome = h.includes('source') && h.includes('amount') && (h.includes('date') || h.includes('date (dd-mmm-yyyy)'))
+  const hasBills  = h.includes('bill') && h.includes('category') && h.includes('amount') && (h.includes('due date') || h.includes('due') )
+  const hasCats   = h.includes('name') && h.includes('type') && h.length<=3
+  if (hasBills) return 'bills'
+  if (hasIncome) return 'income'
+  if (hasCats) return 'categories'
+  return 'unknown'
+}
+
+const mapIncome = (rows) => rows.map(r => ({
+  id: crypto.randomUUID(),
+  date: toDDMMMYYYY(r['Date'] ?? r['date'] ?? r['Date (DD-MMM-YYYY)'] ?? r['date (dd-mmm-yyyy)']),
+  source: r['Source'] ?? r['source'] ?? '',
+  amount: Number(r['Amount'] ?? r['amount'] ?? 0),
+  tags: r['Tags'] ?? r['tags'] ?? ''
+}))
+
+const mapBills = (rows) => rows.map(r => ({
+  id: crypto.randomUUID(),
+  due: toDDMMMYYYY(r['Due Date'] ?? r['due date'] ?? r['Due'] ?? r['due']),
+  name: r['Bill'] ?? r['bill'] ?? '',
+  category: r['Category'] ?? r['category'] ?? '',
+  amount: Math.abs(Number(r['Amount'] ?? r['amount'] ?? 0)),
+  status: (r['Status'] ?? r['status'] ?? 'paid')
+}))
+
+const mapCategories = (rows) => rows.map(r => ({
+  id: crypto.randomUUID(),
+  name: r['Name'] ?? r['name'] ?? '',
+  type: r['Type'] ?? r['type'] ?? 'Expense',
+}))
 
 export default function App(){
   const [categories, setCategories] = useState(seedCategories)
   const [income, setIncome] = useState(seedIncome)
   const [bills, setBills] = useState(seedBills)
-  const [sheetUrl, setSheetUrl] = useState('')
-  const [sheetRows, setSheetRows] = useState([])
 
-  // CSV upload
+  // Three CSV URLs
+  const [catsUrl, setCatsUrl] = useState('')
+  const [incUrl, setIncUrl] = useState('')
+  const [billsUrl, setBillsUrl] = useState('')
+  const [status, setStatus] = useState('')
+
+  const fetchCSV = async (url) => {
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) throw new Error('Fetch failed')
+    const text = await res.text()
+    return Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true }).data || []
+  }
+
+  const loadAll = async () => {
+    try {
+      setStatus('Loading...')
+      let loadedCats=0, loadedInc=0, loadedBills=0
+      if (catsUrl) { const d = await fetchCSV(catsUrl); setCategories(mapCategories(d)); loadedCats=d.length }
+      if (incUrl)  { const d = await fetchCSV(incUrl);  setIncome(mapIncome(d));       loadedInc=d.length }
+      if (billsUrl){ const d = await fetchCSV(billsUrl);setBills(mapBills(d));         loadedBills=d.length }
+      setStatus(`Loaded ${loadedInc} income, ${loadedBills} bills, ${loadedCats} categories`)
+    } catch (e) {
+      setStatus('Load error. Check that each tab is published as CSV and URL is correct.')
+    }
+  }
+
+  // Single Upload button (auto-detects dataset)
   const onUpload = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
-    Papa.parse(file, { header: true, dynamicTyping: true, skipEmptyLines: true,
-      complete: (res)=> setSheetRows(res.data||[]) })
-  }
-  const loadSheet = async () => {
-    if (!sheetUrl) return;
-    const res = await fetch(sheetUrl, { cache: 'no-store' })
-    const text = await res.text()
-    const parsed = Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true });
-    setSheetRows(parsed.data||[]);
+    Papa.parse(file, {
+      header: true, dynamicTyping: true, skipEmptyLines: true,
+      complete: (res)=> {
+        const rows = res.data || []
+        const headers = res.meta?.fields || Object.keys(rows[0]||{})
+        const type = detectType(headers)
+        if (type==='income') { setIncome(mapIncome(rows)); setStatus(`Loaded ${rows.length} income rows from upload`) }
+        else if (type==='bills') { setBills(mapBills(rows)); setStatus(`Loaded ${rows.length} bills rows from upload`) }
+        else if (type==='categories') { setCategories(mapCategories(rows)); setStatus(`Loaded ${rows.length} categories from upload`) }
+        else { setStatus('Could not detect CSV type. Please ensure headers match the templates.') }
+      }
+    })
   }
 
   return (
@@ -60,16 +145,20 @@ export default function App(){
             <Nav to="/categories">Categories</Nav>
             <Nav to="/income">Income</Nav>
             <Nav to="/bills">Bills</Nav>
-            <div className="mt-4 border-t border-stone-200 pt-3 text-sm">
-              <div className="font-medium mb-2">Data (Google Sheet / CSV)</div>
-              <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Published CSV URL" value={sheetUrl} onChange={(e)=> setSheetUrl(e.target.value)} />
-              <div className="flex gap-2 mt-2">
-                <button className="px-3 py-1.5 rounded-lg bg-stone-800 text-white text-sm" onClick={loadSheet}>Load</button>
-                <label className="px-3 py-1.5 rounded-lg bg-stone-700 text-white text-sm cursor-pointer">
-                  Upload CSV<input type="file" accept=".csv" className="hidden" onChange={onUpload}/>
-                </label>
-              </div>
-              <div className="text-xs text-stone-500 mt-2">{sheetRows.length} rows loaded</div>
+
+            {/* Data loaders */}
+            <div className="mt-4 border-t border-stone-200 pt-3 text-sm space-y-2">
+              <div className="font-medium">Google Sheets (Published CSV)</div>
+              <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Categories CSV URL" value={catsUrl} onChange={e=> setCatsUrl(e.target.value)} />
+              <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Income CSV URL" value={incUrl} onChange={e=> setIncUrl(e.target.value)} />
+              <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Bills CSV URL" value={billsUrl} onChange={e=> setBillsUrl(e.target.value)} />
+              <button className="px-3 py-1.5 rounded-lg bg-stone-800 text-white text-sm" onClick={loadAll}>Load All</button>
+
+              <div className="pt-2 font-medium">Or upload a CSV</div>
+              <label className="px-3 py-1.5 rounded-lg bg-stone-700 text-white text-sm cursor-pointer inline-block">
+                Upload CSV<input type="file" accept=".csv" className="hidden" onChange={onUpload}/>
+              </label>
+              <div className="text-xs text-stone-500">{status}</div>
             </div>
           </div>
         </aside>
@@ -97,9 +186,8 @@ function Dashboard({ income, bills }){
   const net = totalIncome - totalExpenses
 
   const monthIndex = (dateStr) => {
-    // expects DD-MMM-YYYY
     const m = (dateStr||'').split('-')[1]
-    return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].indexOf(m)
+    return months.indexOf(m)
   }
   const byMonth = (rows, key) => {
     const m = new Map(months.map((_,i)=> [i,0]))
@@ -140,7 +228,7 @@ function CategoriesPage({ rows, setRows }){
 function IncomePage({ rows, setRows }){
   return (<TablePage title="Income" rows={rows} setRows={setRows}
     columns={[{key:'date',label:'Date (DD-MMM-YYYY)'},{key:'source',label:'Source'},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'tags',label:'Tags'}]}
-    filters={[...new Set(rows.flatMap(r=> Array.isArray(r.tags)? r.tags : (r.tags? String(r.tags).split(',').map(s=> s.trim()) : [])))]}
+    filters={[...new Set(rows.flatMap(r=> String(r.tags||'').split(',').map(s=> s.trim()).filter(Boolean)))]}
     pillField="tags" />)
 }
 function BillsPage({ rows, setRows, categoryOptions }){
@@ -155,7 +243,7 @@ function BillsPage({ rows, setRows, categoryOptions }){
     filters={[...new Set(rows.map(r=> r.status))]} pillField="status" enableEdit />)
 }
 
-// Generic table with Add/Delete/Edit, alternating row shading, collapsible Add box
+// Generic table with Add/Delete/Edit, alternating row shading, collapsible Add box, sticky sidebar supported by layout above
 function TablePage({ title, columns, rows, setRows, filters=[], pillField, enableEdit=false }){
   const [sort, setSort] = useState({ key: columns[0].key, dir: 'asc' })
   const [active, setActive] = useState('all')
@@ -167,7 +255,7 @@ function TablePage({ title, columns, rows, setRows, filters=[], pillField, enabl
     return sorted.filter(r => {
       const val = r[pillField]
       if (Array.isArray(val)) return val.map(String).includes(String(active))
-      return String(val) === String(active)
+      return String(val).split(',').map(s=> s.trim()).includes(String(active))
     })
   }, [sorted, active, pillField])
 
