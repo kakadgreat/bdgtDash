@@ -1,51 +1,60 @@
 
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { NavLink, Routes, Route } from 'react-router-dom'
 import Papa from 'papaparse'
 
 const currency = (n) => (Number(n)||0).toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+const uid = () => (crypto?.randomUUID?.() || Math.random().toString(36).slice(2))
 
-// Seed data (DD-MMM-YYYY)
+// ---- Seeds (DD-MMM-YYYY) ----
 const seedCategories = [
-  { id: 'cat-utilities', name: 'Utilities', type: 'Expense' },
-  { id: 'cat-insurance', name: 'Insurance', type: 'Expense' },
-  { id: 'cat-shopping', name: 'Shopping', type: 'Expense' },
-  { id: 'cat-groceries', name: 'Groceries', type: 'Expense' },
-  { id: 'cat-dining', name: 'Dining', type: 'Expense' },
-  { id: 'cat-income', name: 'Income', type: 'Income' },
-  { id: 'cat-savings', name: 'Savings', type: 'Savings' },
-  { id: 'cat-misc', name: 'Misc', type: 'Expense' },
+  { id: uid(), name: 'Utilities', type: 'Expense' },
+  { id: uid(), name: 'Insurance', type: 'Expense' },
+  { id: uid(), name: 'Shopping', type: 'Expense' },
+  { id: uid(), name: 'Groceries', type: 'Expense' },
+  { id: uid(), name: 'Dining', type: 'Expense' },
+  { id: uid(), name: 'Income', type: 'Income' },
+  { id: uid(), name: 'Savings', type: 'Savings' },
+  { id: uid(), name: 'Misc', type: 'Expense' },
 ]
 const seedIncome = [
-  { id: crypto.randomUUID(), date: '01-Jul-2025', source: 'Paycheck', amount: 2500, tags: 'salary' },
-  { id: crypto.randomUUID(), date: '15-Jul-2025', source: 'Paycheck', amount: 2500, tags: 'salary' },
-  { id: crypto.randomUUID(), date: '20-Jul-2025', source: 'Freelance', amount: 600, tags: 'side' },
+  { id: uid(), date: '01-Jul-2025', source: 'Paycheck', amount: 2500, tags: 'salary' },
+  { id: uid(), date: '15-Jul-2025', source: 'Paycheck', amount: 2500, tags: 'salary' },
+  { id: uid(), date: '20-Jul-2025', source: 'Freelance', amount: 600,  tags: 'side' },
 ]
 const seedBills = [
-  { id: crypto.randomUUID(), due: '20-Jul-2025', name: 'Electricity', category: 'Utilities', amount: 150, status: 'due' },
-  { id: crypto.randomUUID(), due: '25-Jul-2025', name: 'Internet', category: 'Utilities', amount: 80, status: 'paid' },
-  { id: crypto.randomUUID(), due: '10-Jul-2025', name: 'Allstate Insurance', category: 'Insurance', amount: 460, status: 'paid' },
-  { id: crypto.randomUUID(), due: '05-Jul-2025', name: 'Groceries (weekly)', category: 'Groceries', amount: 200, status: 'due' },
+  { id: uid(), due: '20-Jul-2025', name: 'Electricity', category: 'Utilities', amount: 150, status: 'due' },
+  { id: uid(), due: '25-Jul-2025', name: 'Internet',    category: 'Utilities', amount: 80,  status: 'paid' },
+  { id: uid(), due: '10-Jul-2025', name: 'Allstate Insurance', category: 'Insurance', amount: 460, status: 'paid' },
+  { id: uid(), due: '05-Jul-2025', name: 'Groceries (weekly)', category: 'Groceries', amount: 200, status: 'due' },
 ]
 
-// ---- Helpers ----
+// ---- Local Storage helpers ----
+const LS = {
+  catsUrl: 'bd.catsUrl',
+  incUrl: 'bd.incUrl',
+  billsUrl: 'bd.billsUrl',
+  cats: 'bd.cats',
+  income: 'bd.income',
+  bills: 'bd.bills'
+}
+const getLS = (k, fallback) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback } catch { return fallback } }
+const setLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
+
+// ---- Date helpers ----
 const toDDMMMYYYY = (raw) => {
   if (!raw) return ''
   const s = String(raw).trim()
-  // try 2025-07-05
+  // Already in DD-MMM-YYYY?
+  const parts = s.split('-'); if (parts.length===3 && parts[1]?.length===3) return s
+  // Try ISO or Date parseable
   let d = new Date(s)
   if (isNaN(d)) {
-    // try MM/DD/YYYY
     const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
     if (m) d = new Date(`${m[2]}/${m[1]}/${m[3]}`)
   }
-  if (isNaN(d)) {
-    // try DD-MMM-YYYY already
-    const parts = s.split('-')
-    if (parts.length===3 && parts[1].length===3) return s
-    return s // last resort: leave as-is
-  }
+  if (isNaN(d)) return s
   const dd = String(d.getDate()).padStart(2,'0')
   const mmm = months[d.getMonth()]
   const yyyy = d.getFullYear()
@@ -54,9 +63,9 @@ const toDDMMMYYYY = (raw) => {
 
 const detectType = (headers) => {
   const h = headers.map(x=> String(x).trim().toLowerCase())
-  const hasIncome = h.includes('source') && h.includes('amount') && (h.includes('date') || h.includes('date (dd-mmm-yyyy)'))
-  const hasBills  = h.includes('bill') && h.includes('category') && h.includes('amount') && (h.includes('due date') || h.includes('due') )
-  const hasCats   = h.includes('name') && h.includes('type') && h.length<=3
+  const hasIncome = h.includes('source') && h.includes('amount') && h.some(x=> x.startsWith('date'))
+  const hasBills  = h.includes('bill')   && h.includes('category') && h.includes('amount') && h.some(x=> x.startsWith('due'))
+  const hasCats   = h.includes('name')   && h.includes('type') && h.length<=3
   if (hasBills) return 'bills'
   if (hasIncome) return 'income'
   if (hasCats) return 'categories'
@@ -64,60 +73,75 @@ const detectType = (headers) => {
 }
 
 const mapIncome = (rows) => rows.map(r => ({
-  id: crypto.randomUUID(),
+  id: uid(),
   date: toDDMMMYYYY(r['Date'] ?? r['date'] ?? r['Date (DD-MMM-YYYY)'] ?? r['date (dd-mmm-yyyy)']),
   source: r['Source'] ?? r['source'] ?? '',
   amount: Number(r['Amount'] ?? r['amount'] ?? 0),
-  tags: r['Tags'] ?? r['tags'] ?? ''
+  tags: (r['Tags'] ?? r['tags'] ?? '').toString()
 }))
-
 const mapBills = (rows) => rows.map(r => ({
-  id: crypto.randomUUID(),
+  id: uid(),
   due: toDDMMMYYYY(r['Due Date'] ?? r['due date'] ?? r['Due'] ?? r['due']),
   name: r['Bill'] ?? r['bill'] ?? '',
   category: r['Category'] ?? r['category'] ?? '',
   amount: Math.abs(Number(r['Amount'] ?? r['amount'] ?? 0)),
-  status: (r['Status'] ?? r['status'] ?? 'paid')
+  status: (r['Status'] ?? r['status'] ?? 'paid').toString()
 }))
-
 const mapCategories = (rows) => rows.map(r => ({
-  id: crypto.randomUUID(),
+  id: uid(),
   name: r['Name'] ?? r['name'] ?? '',
   type: r['Type'] ?? r['type'] ?? 'Expense',
 }))
 
+// ---- App ----
 export default function App(){
-  const [categories, setCategories] = useState(seedCategories)
-  const [income, setIncome] = useState(seedIncome)
-  const [bills, setBills] = useState(seedBills)
+  const [categories, setCategories] = useState(getLS(LS.cats, seedCategories))
+  const [income, setIncome] = useState(getLS(LS.income, seedIncome))
+  const [bills, setBills] = useState(getLS(LS.bills, seedBills))
 
-  // Three CSV URLs
-  const [catsUrl, setCatsUrl] = useState('')
-  const [incUrl, setIncUrl] = useState('')
-  const [billsUrl, setBillsUrl] = useState('')
+  const [catsUrl, setCatsUrl] = useState(localStorage.getItem(LS.catsUrl) || '')
+  const [incUrl, setIncUrl]   = useState(localStorage.getItem(LS.incUrl) || '')
+  const [billsUrl, setBillsUrl] = useState(localStorage.getItem(LS.billsUrl) || '')
   const [status, setStatus] = useState('')
+  const [showDataBox, setShowDataBox] = useState(false) // collapsible "Data" pill
+
+  // persist on change
+  useEffect(()=> setLS(LS.cats, categories), [categories])
+  useEffect(()=> setLS(LS.income, income), [income])
+  useEffect(()=> setLS(LS.bills, bills), [bills])
+
+  useEffect(()=> localStorage.setItem(LS.catsUrl, catsUrl), [catsUrl])
+  useEffect(()=> localStorage.setItem(LS.incUrl, incUrl), [incUrl])
+  useEffect(()=> localStorage.setItem(LS.billsUrl, billsUrl), [billsUrl])
+
+  // Auto-load from URLs on first mount (if present)
+  useEffect(()=>{
+    const hasAny = catsUrl || incUrl || billsUrl
+    if (hasAny) loadAll(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const fetchCSV = async (url) => {
-    const res = await fetch(url, { cache: 'no-store' })
+    const bust = `&_=${Date.now()}`
+    const res = await fetch(url + (url.includes('?') ? bust : '?'+bust), { cache: 'no-store' })
     if (!res.ok) throw new Error('Fetch failed')
     const text = await res.text()
     return Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true }).data || []
   }
 
-  const loadAll = async () => {
+  const loadAll = async (silent=false) => {
     try {
-      setStatus('Loading...')
+      if (!silent) setStatus('Loading...')
       let loadedCats=0, loadedInc=0, loadedBills=0
       if (catsUrl) { const d = await fetchCSV(catsUrl); setCategories(mapCategories(d)); loadedCats=d.length }
       if (incUrl)  { const d = await fetchCSV(incUrl);  setIncome(mapIncome(d));       loadedInc=d.length }
       if (billsUrl){ const d = await fetchCSV(billsUrl);setBills(mapBills(d));         loadedBills=d.length }
-      setStatus(`Loaded ${loadedInc} income, ${loadedBills} bills, ${loadedCats} categories`)
+      if (!silent) setStatus(`Loaded ${loadedInc} income, ${loadedBills} bills, ${loadedCats} categories`)
     } catch (e) {
-      setStatus('Load error. Check that each tab is published as CSV and URL is correct.')
+      if (!silent) setStatus('Load error. Ensure each tab is published as CSV and URLs are correct.')
     }
   }
 
-  // Single Upload button (auto-detects dataset)
   const onUpload = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     Papa.parse(file, {
@@ -126,10 +150,10 @@ export default function App(){
         const rows = res.data || []
         const headers = res.meta?.fields || Object.keys(rows[0]||{})
         const type = detectType(headers)
-        if (type==='income') { setIncome(mapIncome(rows)); setStatus(`Loaded ${rows.length} income rows from upload`) }
-        else if (type==='bills') { setBills(mapBills(rows)); setStatus(`Loaded ${rows.length} bills rows from upload`) }
-        else if (type==='categories') { setCategories(mapCategories(rows)); setStatus(`Loaded ${rows.length} categories from upload`) }
-        else { setStatus('Could not detect CSV type. Please ensure headers match the templates.') }
+        if (type==='income')      { const d = mapIncome(rows); setIncome(d); setStatus(`Loaded ${rows.length} income rows`) }
+        else if (type==='bills')  { const d = mapBills(rows); setBills(d);   setStatus(`Loaded ${rows.length} bills rows`) }
+        else if (type==='categories') { const d = mapCategories(rows); setCategories(d); setStatus(`Loaded ${rows.length} categories`) }
+        else                     { setStatus('Unknown CSV. Use the provided templates.') }
       }
     })
   }
@@ -137,7 +161,7 @@ export default function App(){
   return (
     <div className="min-h-screen bg-stone-100 text-stone-800">
       <div className="max-w-7xl mx-auto p-4 grid grid-cols-12 gap-4">
-        {/* Sticky sidebar */}
+        {/* Sidebar */}
         <aside className="col-span-12 md:col-span-3 lg:col-span-2 md:sticky md:top-4 self-start">
           <div className="bg-stone-50 rounded-2xl shadow-sm p-4">
             <div className="text-xl font-semibold mb-2">Budget</div>
@@ -146,19 +170,26 @@ export default function App(){
             <Nav to="/income">Income</Nav>
             <Nav to="/bills">Bills</Nav>
 
-            {/* Data loaders */}
-            <div className="mt-4 border-t border-stone-200 pt-3 text-sm space-y-2">
-              <div className="font-medium">Google Sheets (Published CSV)</div>
-              <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Categories CSV URL" value={catsUrl} onChange={e=> setCatsUrl(e.target.value)} />
-              <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Income CSV URL" value={incUrl} onChange={e=> setIncUrl(e.target.value)} />
-              <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Bills CSV URL" value={billsUrl} onChange={e=> setBillsUrl(e.target.value)} />
-              <button className="px-3 py-1.5 rounded-lg bg-stone-800 text-white text-sm" onClick={loadAll}>Load All</button>
+            {/* Data pill (collapsible) */}
+            <div className="mt-4">
+              <button className="w-full px-3 py-2 rounded-xl bg-stone-200 text-sm font-medium" onClick={()=> setShowDataBox(s=>!s)}>
+                {showDataBox? 'Hide Data' : 'Show Data'}
+              </button>
+              {showDataBox && (
+                <div className="mt-3 border border-stone-200 rounded-xl p-3 text-sm space-y-2">
+                  <div className="font-medium">Google Sheets (Published CSV)</div>
+                  <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Categories CSV URL" value={catsUrl} onChange={e=> setCatsUrl(e.target.value)} />
+                  <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Income CSV URL" value={incUrl} onChange={e=> setIncUrl(e.target.value)} />
+                  <input className="w-full text-sm px-3 py-2 rounded-lg bg-stone-100" placeholder="Bills CSV URL" value={billsUrl} onChange={e=> setBillsUrl(e.target.value)} />
+                  <button className="px-3 py-1.5 rounded-lg bg-stone-800 text-white text-sm" onClick={()=> loadAll(false)}>Load All</button>
 
-              <div className="pt-2 font-medium">Or upload a CSV</div>
-              <label className="px-3 py-1.5 rounded-lg bg-stone-700 text-white text-sm cursor-pointer inline-block">
-                Upload CSV<input type="file" accept=".csv" className="hidden" onChange={onUpload}/>
-              </label>
-              <div className="text-xs text-stone-500">{status}</div>
+                  <div className="pt-2 font-medium">Or upload a CSV</div>
+                  <label className="px-3 py-1.5 rounded-lg bg-stone-700 text-white text-sm cursor-pointer inline-block">
+                    Upload CSV<input type="file" accept=".csv" className="hidden" onChange={onUpload}/>
+                  </label>
+                  <div className="text-xs text-stone-500">{status}</div>
+                </div>
+              )}
             </div>
           </div>
         </aside>
@@ -185,22 +216,22 @@ function Dashboard({ income, bills }){
   const totalExpenses = useMemo(()=> bills.reduce((s,b)=> s+Number(b.amount||0),0), [bills])
   const net = totalIncome - totalExpenses
 
-  const monthIndex = (dateStr) => {
-    const m = (dateStr||'').split('-')[1]
-    return months.indexOf(m)
-  }
-  const byMonth = (rows, key) => {
+  const monthIndex = (dateStr) => months.indexOf((dateStr||'').split('-')[1])
+  const groupByMonth = (rows, dateKey) => {
     const m = new Map(months.map((_,i)=> [i,0]))
-    rows.forEach(r=> {
-      const d = key==='income' ? r.date : r.due
-      const idx = monthIndex(d)
-      if (idx>=0) m.set(idx, (m.get(idx)||0) + Number(r.amount||0))
-    })
+    rows.forEach(r=> { const idx = monthIndex(r[dateKey]); if (idx>=0) m.set(idx, (m.get(idx)||0) + Number(r.amount||0)) })
     return months.map((_,i)=> m.get(i))
   }
-  const incSeries = byMonth(income, 'income')
-  const expSeries = byMonth(bills, 'bills')
+  const incSeries = groupByMonth(income, 'date')
+  const expSeries = groupByMonth(bills, 'due')
   const maxBar = Math.max(...incSeries, ...expSeries, 1)
+
+  // Top 5 categories by spend
+  const byCat = useMemo(()=> {
+    const m = new Map()
+    bills.forEach(b=> m.set(b.category||'Uncategorized', (m.get(b.category||'Uncategorized')||0) + Number(b.amount||0)))
+    return [...m.entries()].sort((a,b)=> b[1]-a[1]).slice(0,5)
+  }, [bills])
 
   return (
     <div className="space-y-4">
@@ -212,6 +243,21 @@ function Dashboard({ income, bills }){
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card title="Income by Month"><MiniBars labels={months} values={incSeries} max={maxBar} color="bg-emerald-600" /></Card>
         <Card title="Expenses by Month"><MiniBars labels={months} values={expSeries} max={maxBar} color="bg-rose-600" /></Card>
+      </div>
+      <div className="grid grid-cols-1 gap-4">
+        <Card title="Top 5 Categories by Spend">
+          <div className="space-y-2">
+            {byCat.map(([cat,val])=> (
+              <div key={cat} className="flex items-center gap-2">
+                <div className="w-40 text-sm text-stone-600">{cat}</div>
+                <div className="flex-1 bg-stone-200 rounded-full h-3 overflow-hidden">
+                  <div className="h-3 bg-stone-700" style={{ width: `${(val / (byCat[0]?.[1]||1)) * 100}%` }}></div>
+                </div>
+                <div className="w-24 text-right text-sm">{currency(val)}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
       </div>
     </div>
   )
@@ -240,34 +286,66 @@ function BillsPage({ rows, setRows, categoryOptions }){
       {key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},
       {key:'status',label:'Status'}
     ]}
-    filters={[...new Set(rows.map(r=> r.status))]} pillField="status" enableEdit />)
+    filters={[...new Set(rows.map(r=> r.status))]} pillField="status" enableEdit categoriesForPills={categoryOptions} multiCategory />)
 }
 
-// Generic table with Add/Delete/Edit, alternating row shading, collapsible Add box, sticky sidebar supported by layout above
-function TablePage({ title, columns, rows, setRows, filters=[], pillField, enableEdit=false }){
+// Generic table with pagination, multi-select category pills (Bills), alternating rows, collapsible Add box
+function TablePage({ title, columns, rows, setRows, filters=[], pillField, enableEdit=false, categoriesForPills=[], multiCategory=false }){
   const [sort, setSort] = useState({ key: columns[0].key, dir: 'asc' })
-  const [active, setActive] = useState('all')
+  const [active, setActive] = useState(multiCategory? [] : 'all')
   const [showAdd, setShowAdd] = useState(true)
   const [editId, setEditId] = useState(null)
-  const sorted = useMemo(()=> [...rows].sort((a,b)=> sort.dir==='asc' ? (a[sort.key]>b[sort.key]?1:-1) : (a[sort.key]<b[sort.key]?1:-1)), [rows, sort])
+
+  const [pageSize, setPageSize] = useState(25)
+  const [page, setPage] = useState(1)
+
+  const sorted = useMemo(()=> [...rows].sort((a,b)=> {
+    const av = a[sort.key], bv = b[sort.key]
+    if (av===bv) return 0
+    return sort.dir==='asc' ? (av>bv?1:-1) : (av<bv?1:-1)
+  }), [rows, sort])
+
   const filtered = useMemo(()=> {
-    if (!pillField || active==='all') return sorted
-    return sorted.filter(r => {
-      const val = r[pillField]
-      if (Array.isArray(val)) return val.map(String).includes(String(active))
-      return String(val).split(',').map(s=> s.trim()).includes(String(active))
-    })
-  }, [sorted, active, pillField])
+    let res = sorted
+    if (pillField && (active!=='all' || (Array.isArray(active) && active.length))) {
+      res = res.filter(r => {
+        const val = r[pillField]
+        if (Array.isArray(active)) return active.includes(String(val))
+        if (Array.isArray(val)) return val.map(String).includes(String(active))
+        return String(val) === String(active) || active==='all'
+      })
+    }
+    // Multi-category pills for bills (independent of pillField)
+    if (multiCategory && Array.isArray(active) && active.length){
+      res = res.filter(r => active.includes(String(r.category||'')))
+    }
+    return res
+  }, [sorted, active, pillField, multiCategory])
+
+  // pagination
+  const total = filtered.length
+  const totalPages = Math.max(1, Math.ceil(total / (pageSize || total)))
+  const current = useMemo(()=> {
+    if (!pageSize || pageSize === 'All') return filtered
+    const start = (page-1)*pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
 
   const empty = Object.fromEntries(columns.map(c=> [c.key, c.type==='number'? 0 : '']))
   const [form, setForm] = useState(empty)
-
-  const addRow = () => { setRows(prev=> [...prev, { id: crypto.randomUUID(), ...form }]); setForm(empty) }
+  const addRow = () => { setRows(prev=> [{ id: uid(), ...form }, ...prev]); setForm(empty) }
   const remove = (id) => setRows(prev => prev.filter(r => r.id !== id))
-
   const startEdit = (row) => { setEditId(row.id); setForm(columns.reduce((acc,c)=> ({...acc, [c.key]: row[c.key] ?? (c.type==='number'?0:'')}), {})) }
   const saveEdit = () => { setRows(prev => prev.map(r => r.id===editId? { ...r, ...form } : r)); setEditId(null); setForm(empty) }
   const cancelEdit = () => { setEditId(null); setForm(empty) }
+
+  const toggleCat = (cat) => {
+    setActive(a => {
+      if (!Array.isArray(a)) return [cat]
+      return a.includes(cat) ? a.filter(x=> x!==cat) : [...a, cat]
+    })
+  }
+  const clearCats = () => setActive([])
 
   return (
     <div className="space-y-4">
@@ -275,7 +353,7 @@ function TablePage({ title, columns, rows, setRows, filters=[], pillField, enabl
         <h2 className="text-xl font-semibold">{title}</h2>
       </div>
 
-      {/* Collapsible Add New above pills */}
+      {/* Add box */}
       <div className="bg-white rounded-2xl shadow-sm p-4">
         <div className="flex items-center justify-between">
           <div className="font-medium">Add New</div>
@@ -302,20 +380,37 @@ function TablePage({ title, columns, rows, setRows, filters=[], pillField, enabl
         )}
       </div>
 
-      {/* Filter pills */}
-      {filters.length>0 && (
+      {/* Multi-select category pills if provided */}
+      {multiCategory && categoriesForPills.length>0 && (
         <div className="flex flex-wrap gap-2">
-          <button className={`px-2 py-1 rounded-full text-xs ${active==='all'?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive('all')}>All</button>
-          {filters.map((f,i)=> (
-            <button key={i} className={`px-2 py-1 rounded-full text-xs ${active===f?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive(f)}>{f}</button>
+          <button className={`px-2 py-1 rounded-full text-xs ${(!Array.isArray(active) || active.length===0)?'bg-blue-100 text-blue-800':'bg-stone-200'}`} onClick={clearCats}>All</button>
+          {categoriesForPills.map((c)=> (
+            <button key={c} className={`px-2 py-1 rounded-full text-xs ${Array.isArray(active) && active.includes(c)?'bg-blue-100 text-blue-800':'bg-stone-200'}`} onClick={()=> toggleCat(c)}>{c}</button>
           ))}
         </div>
       )}
 
-      {/* Table with alternating row shading */}
+      {/* Pagination controls */}
+      <div className="flex items-center gap-3 text-sm">
+        <div>Rows per page:</div>
+        <select className="bg-stone-100 rounded px-2 py-1" value={pageSize} onChange={e=> { const v = e.target.value==='All'? 0 : Number(e.target.value); setPageSize(v); setPage(1) }}>
+          <option>25</option><option>50</option><option>100</option><option>All</option>
+        </select>
+        <div className="ml-auto flex items-center gap-2">
+          <button disabled={page<=1} className="px-2 py-1 rounded bg-stone-200 disabled:opacity-50" onClick={()=> setPage(p=> Math.max(1,p-1))}>Prev</button>
+          <span>Page {page} / {totalPages}</span>
+          <button disabled={page>=totalPages} className="px-2 py-1 rounded bg-stone-200 disabled:opacity-50" onClick={()=> setPage(p=> Math.min(totalPages,p+1))}>Next</button>
+        </div>
+      </div>
+
+      {/* Table */}
       <div className="overflow-x-auto bg-white rounded-2xl shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            {columns.map((c,i)=> <col key={i} className={i===1? 'w-[40%]' : 'w-[15%]'} />)}
+            <col className="w-[15%]" />
+          </colgroup>
+        <thead>
             <tr className="text-left text-stone-500">
               {columns.map(col => (
                 <th key={col.key} className="py-2 px-3 cursor-pointer" onClick={()=> setSort(s=> ({ key: col.key, dir: s.dir==='asc'?'desc':'asc' }))}>
@@ -326,12 +421,12 @@ function TablePage({ title, columns, rows, setRows, filters=[], pillField, enabl
             </tr>
           </thead>
           <tbody>
-            {filtered.map((row, idx) => {
+            {current.map((row, idx) => {
               const isEditing = enableEdit && row.id === editId
               return (
                 <tr key={row.id} className={`${idx % 2 === 0 ? 'bg-stone-50' : 'bg-white'} border-t border-stone-200`}>
                   {columns.map(col => (
-                    <td key={col.key} className="py-2 px-3 whitespace-nowrap">
+                    <td key={col.key} className="py-2 px-3 whitespace-normal break-words">
                       {isEditing ? (
                         col.input === 'select' ? (
                           <select className="px-2 py-1 rounded bg-stone-100 text-sm" value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: e.target.value}))}>
@@ -339,7 +434,7 @@ function TablePage({ title, columns, rows, setRows, filters=[], pillField, enabl
                             {(col.options||[]).map(opt => <option key={opt} value={opt}>{opt}</option>)}
                           </select>
                         ) : (
-                          <input className="px-2 py-1 rounded bg-stone-100 text-sm" type={col.type==='number'?'number':'text'} value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: col.type==='number'? Number(e.target.value) : e.target.value}))}/>
+                          <input className="px-2 py-1 rounded bg-stone-100 text-sm w-full" type={col.type==='number'?'number':'text'} value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: col.type==='number'? Number(e.target.value) : e.target.value}))}/>
                         )
                       ) : (
                         col.render ? col.render(row[col.key], row) : String(row[col.key] ?? '')
