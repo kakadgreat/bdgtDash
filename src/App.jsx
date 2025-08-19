@@ -5,6 +5,7 @@ import Papa from 'papaparse'
 const currency = (n) => (Number(n)||0).toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
+// Seed data with Day-Month-Year format
 const seedCategories = [
   { id: 'cat-utilities', name: 'Utilities', type: 'Expense' },
   { id: 'cat-insurance', name: 'Insurance', type: 'Expense' },
@@ -16,15 +17,15 @@ const seedCategories = [
   { id: 'cat-misc', name: 'Misc', type: 'Expense' },
 ]
 const seedIncome = [
-  { id: 'inc-1', date: '2025-07-01', source: 'Paycheck', amount: 2500, tags: ['salary'] },
-  { id: 'inc-2', date: '2025-07-15', source: 'Paycheck', amount: 2500, tags: ['salary'] },
-  { id: 'inc-3', date: '2025-07-20', source: 'Freelance', amount: 600, tags: ['side'] },
+  { id: 'inc-1', date: '01-Jul-2025', source: 'Paycheck', amount: 2500, tags: ['salary'] },
+  { id: 'inc-2', date: '15-Jul-2025', source: 'Paycheck', amount: 2500, tags: ['salary'] },
+  { id: 'inc-3', date: '20-Jul-2025', source: 'Freelance', amount: 600, tags: ['side'] },
 ]
 const seedBills = [
-  { id: 'bill-1', due: '2025-07-20', name: 'Electricity', category: 'Utilities', amount: 150, status: 'due' },
-  { id: 'bill-2', due: '2025-07-25', name: 'Internet', category: 'Utilities', amount: 80, status: 'paid' },
-  { id: 'bill-3', due: '2025-07-10', name: 'Allstate Insurance', category: 'Insurance', amount: 460, status: 'paid' },
-  { id: 'bill-4', due: '2025-07-05', name: 'Groceries (weekly)', category: 'Groceries', amount: 200, status: 'due' },
+  { id: 'bill-1', due: '20-Jul-2025', name: 'Electricity', category: 'Utilities', amount: 150, status: 'due' },
+  { id: 'bill-2', due: '25-Jul-2025', name: 'Internet', category: 'Utilities', amount: 80, status: 'paid' },
+  { id: 'bill-3', due: '10-Jul-2025', name: 'Allstate Insurance', category: 'Insurance', amount: 460, status: 'paid' },
+  { id: 'bill-4', due: '05-Jul-2025', name: 'Groceries (weekly)', category: 'Groceries', amount: 200, status: 'due' },
 ]
 
 export default function App(){
@@ -34,6 +35,7 @@ export default function App(){
   const [sheetUrl, setSheetUrl] = useState('')
   const [sheetRows, setSheetRows] = useState([])
 
+  // CSV upload
   const onUpload = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     Papa.parse(file, { header: true, dynamicTyping: true, skipEmptyLines: true,
@@ -50,7 +52,8 @@ export default function App(){
   return (
     <div className="min-h-screen bg-stone-100 text-stone-800">
       <div className="max-w-7xl mx-auto p-4 grid grid-cols-12 gap-4">
-        <aside className="col-span-12 md:col-span-3 lg:col-span-2">
+        {/* Sticky sidebar */}
+        <aside className="col-span-12 md:col-span-3 lg:col-span-2 md:sticky md:top-4 self-start">
           <div className="bg-stone-50 rounded-2xl shadow-sm p-4">
             <div className="text-xl font-semibold mb-2">Budget</div>
             <Nav to="/">Dashboard</Nav>
@@ -70,6 +73,7 @@ export default function App(){
             </div>
           </div>
         </aside>
+
         <main className="col-span-12 md:col-span-9 lg:col-span-10">
           <Routes>
             <Route index element={<Dashboard income={income} bills={bills} />} />
@@ -92,11 +96,17 @@ function Dashboard({ income, bills }){
   const totalExpenses = useMemo(()=> bills.reduce((s,b)=> s+Number(b.amount||0),0), [bills])
   const net = totalIncome - totalExpenses
 
+  const monthIndex = (dateStr) => {
+    // expects DD-MMM-YYYY
+    const m = (dateStr||'').split('-')[1]
+    return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].indexOf(m)
+  }
   const byMonth = (rows, key) => {
     const m = new Map(months.map((_,i)=> [i,0]))
     rows.forEach(r=> {
-      const d = new Date(r[key==='income'?'date':'due'])
-      if (!isNaN(d)) m.set(d.getMonth(), (m.get(d.getMonth())||0) + Number(r.amount||0))
+      const d = key==='income' ? r.date : r.due
+      const idx = monthIndex(d)
+      if (idx>=0) m.set(idx, (m.get(idx)||0) + Number(r.amount||0))
     })
     return months.map((_,i)=> m.get(i))
   }
@@ -129,19 +139,28 @@ function CategoriesPage({ rows, setRows }){
 }
 function IncomePage({ rows, setRows }){
   return (<TablePage title="Income" rows={rows} setRows={setRows}
-    columns={[{key:'date',label:'Date'},{key:'source',label:'Source'},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'tags',label:'Tags'}]}
+    columns={[{key:'date',label:'Date (DD-MMM-YYYY)'},{key:'source',label:'Source'},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'tags',label:'Tags'}]}
     filters={[...new Set(rows.flatMap(r=> Array.isArray(r.tags)? r.tags : (r.tags? String(r.tags).split(',').map(s=> s.trim()) : [])))]}
     pillField="tags" />)
 }
 function BillsPage({ rows, setRows, categoryOptions }){
   return (<TablePage title="Bills" rows={rows} setRows={setRows}
-    columns={[{key:'due',label:'Due Date'},{key:'name',label:'Bill'},{key:'category',label:'Category', input:'select', options: categoryOptions},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'status',label:'Status'}]}
-    filters={[...new Set(rows.map(r=> r.status))]} pillField="status" />)
+    columns={[
+      {key:'due',label:'Due (DD-MMM-YYYY)'},
+      {key:'name',label:'Bill'},
+      {key:'category',label:'Category', input:'select', options: categoryOptions},
+      {key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},
+      {key:'status',label:'Status'}
+    ]}
+    filters={[...new Set(rows.map(r=> r.status))]} pillField="status" enableEdit />)
 }
 
-function TablePage({ title, columns, rows, setRows, filters=[], pillField }){
+// Generic table with Add/Delete/Edit, alternating row shading, collapsible Add box
+function TablePage({ title, columns, rows, setRows, filters=[], pillField, enableEdit=false }){
   const [sort, setSort] = useState({ key: columns[0].key, dir: 'asc' })
   const [active, setActive] = useState('all')
+  const [showAdd, setShowAdd] = useState(true)
+  const [editId, setEditId] = useState(null)
   const sorted = useMemo(()=> [...rows].sort((a,b)=> sort.dir==='asc' ? (a[sort.key]>b[sort.key]?1:-1) : (a[sort.key]<b[sort.key]?1:-1)), [rows, sort])
   const filtered = useMemo(()=> {
     if (!pillField || active==='all') return sorted
@@ -158,50 +177,109 @@ function TablePage({ title, columns, rows, setRows, filters=[], pillField }){
   const addRow = () => { setRows(prev=> [...prev, { id: crypto.randomUUID(), ...form }]); setForm(empty) }
   const remove = (id) => setRows(prev => prev.filter(r => r.id !== id))
 
+  const startEdit = (row) => { setEditId(row.id); setForm(columns.reduce((acc,c)=> ({...acc, [c.key]: row[c.key] ?? (c.type==='number'?0:'')}), {})) }
+  const saveEdit = () => { setRows(prev => prev.map(r => r.id===editId? { ...r, ...form } : r)); setEditId(null); setForm(empty) }
+  const cancelEdit = () => { setEditId(null); setForm(empty) }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">{title}</h2></div>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">{title}</h2>
+      </div>
 
+      {/* Collapsible Add New above pills */}
+      <div className="bg-white rounded-2xl shadow-sm p-4">
+        <div className="flex items-center justify-between">
+          <div className="font-medium">Add New</div>
+          <button className="text-sm text-stone-600 underline" onClick={()=> setShowAdd(s=> !s)}>{showAdd? 'Hide' : 'Show'}</button>
+        </div>
+        {showAdd && (
+          <div className="pt-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+              {columns.map(col => (
+                <div key={col.key}>
+                  {col.input === 'select' ? (
+                    <select className="px-3 py-2 rounded-lg bg-stone-100 text-sm w-full" value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: e.target.value}))}>
+                      <option value="">Select…</option>
+                      {(col.options||[]).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  ) : (
+                    <input className="px-3 py-2 rounded-lg bg-stone-100 text-sm w-full" placeholder={col.label} type={col.type==='number'?'number':'text'} value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: col.type==='number'? Number(e.target.value) : e.target.value}))}/>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="pt-2"><button className="px-3 py-2 rounded-lg bg-stone-800 text-white text-sm" onClick={addRow}>Add</button></div>
+          </div>
+        )}
+      </div>
+
+      {/* Filter pills */}
       {filters.length>0 && (
         <div className="flex flex-wrap gap-2">
           <button className={`px-2 py-1 rounded-full text-xs ${active==='all'?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive('all')}>All</button>
-          {filters.map((f,i)=> (<button key={i} className={`px-2 py-1 rounded-full text-xs ${active===f?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive(f)}>{f}</button>))}
+          {filters.map((f,i)=> (
+            <button key={i} className={`px-2 py-1 rounded-full text-xs ${active===f?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive(f)}>{f}</button>
+          ))}
         </div>
       )}
 
+      {/* Table with alternating row shading */}
       <div className="overflow-x-auto bg-white rounded-2xl shadow-sm">
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-stone-500">
-            {columns.map(col => (<th key={col.key} className="py-2 px-3 cursor-pointer" onClick={()=> setSort(s=> ({ key: col.key, dir: s.dir==='asc'?'desc':'asc' }))}>{col.label}</th>))}
-            <th className="py-2 px-3">Actions</th></tr></thead>
+          <thead>
+            <tr className="text-left text-stone-500">
+              {columns.map(col => (
+                <th key={col.key} className="py-2 px-3 cursor-pointer" onClick={()=> setSort(s=> ({ key: col.key, dir: s.dir==='asc'?'desc':'asc' }))}>
+                  {col.label}
+                </th>
+              ))}
+              <th className="py-2 px-3">Actions</th>
+            </tr>
+          </thead>
           <tbody>
-            {filtered.map(row => (
-              <tr key={row.id} className="border-t border-stone-200">
-                {columns.map(col => (<td key={col.key} className="py-2 px-3 whitespace-nowrap">{col.render? col.render(row[col.key], row) : String(row[col.key] ?? '')}</td>))}
-                <td className="py-2 px-3"><button className="text-rose-600 hover:underline" onClick={()=> remove(row.id)}>Delete</button></td>
-              </tr>
-            ))}
+            {filtered.map((row, idx) => {
+              const isEditing = enableEdit && row.id === editId
+              return (
+                <tr key={row.id} className={`${idx % 2 === 0 ? 'bg-stone-50' : 'bg-white'} border-t border-stone-200`}>
+                  {columns.map(col => (
+                    <td key={col.key} className="py-2 px-3 whitespace-nowrap">
+                      {isEditing ? (
+                        col.input === 'select' ? (
+                          <select className="px-2 py-1 rounded bg-stone-100 text-sm" value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: e.target.value}))}>
+                            <option value="">Select…</option>
+                            {(col.options||[]).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        ) : (
+                          <input className="px-2 py-1 rounded bg-stone-100 text-sm" type={col.type==='number'?'number':'text'} value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: col.type==='number'? Number(e.target.value) : e.target.value}))}/>
+                        )
+                      ) : (
+                        col.render ? col.render(row[col.key], row) : String(row[col.key] ?? '')
+                      )}
+                    </td>
+                  ))}
+                  <td className="py-2 px-3">
+                    {enableEdit ? (
+                      isEditing ? (
+                        <div className="flex gap-2">
+                          <button className="text-emerald-700 hover:underline" onClick={saveEdit}>Save</button>
+                          <button className="text-stone-600 hover:underline" onClick={cancelEdit}>Cancel</button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button className="text-stone-700 hover:underline" onClick={()=> startEdit(row)}>Edit</button>
+                          <button className="text-rose-600 hover:underline" onClick={()=> remove(row.id)}>Delete</button>
+                        </div>
+                      )
+                    ) : (
+                      <button className="text-rose-600 hover:underline" onClick={()=> remove(row.id)}>Delete</button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm p-4">
-        <div className="font-medium mb-2">Add New</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
-          {columns.map(col => (
-            <div key={col.key}>
-              {col.input === 'select' ? (
-                <select className="px-3 py-2 rounded-lg bg-stone-100 text-sm w-full" value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: e.target.value}))}>
-                  <option value="">Select…</option>
-                  {(col.options||[]).map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                </select>
-              ) : (
-                <input className="px-3 py-2 rounded-lg bg-stone-100 text-sm w-full" placeholder={col.label} type={col.type==='number'?'number':'text'} value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: col.type==='number'? Number(e.target.value) : e.target.value}))}/>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="pt-2"><button className="px-3 py-2 rounded-lg bg-stone-800 text-white text-sm" onClick={addRow}>Add</button></div>
       </div>
     </div>
   )
