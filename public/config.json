@@ -1,6 +1,6 @@
 {
-  "categoriesCsvUrl": "",
-  "incomeCsvUrl": "",
-  "billsCsvUrl": "",
+  "categoriesCsvUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTlx-Ky4kfv_Ne9ynz_JYqPsnp5gjIEgBTblW2udgUakXgb8ugpA9PVgWNe091kOA/pub?gid=6536828&single=true&output=csv",
+  "incomeCsvUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTlx-Ky4kfv_Ne9ynz_JYqPsnp5gjIEgBTblW2udgUakXgb8ugpA9PVgWNe091kOA/pub?gid=1003681058&single=true&output=csv",
+  "billsCsvUrl": "https://docs.google.com/spreadsheets/d/e/2PACX-1vTlx-Ky4kfv_Ne9ynz_JYqPsnp5gjIEgBTblW2udgUakXgb8ugpA9PVgWNe091kOA/pub?gid=2108044465&single=true&output=csv",
   "writebackUrl": ""
 }
