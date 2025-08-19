@@ -2,5 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 :root { color-scheme: light only; }
-.table-fixed { table-layout: fixed; }
-.wrap { word-break: break-word; white-space: normal; }
+
+/* Prevent horizontal overflow in tables */
+.table-fixed-layout table { table-layout: fixed; }
+.table-fixed-layout td, .table-fixed-layout th { word-break: break-word; white-space: normal; }
+
+/* Stronger action buttons */
+.btn {
+  @apply inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-sm;
+}
+.btn-primary { @apply bg-stone-800 text-white hover:bg-stone-700; }
+.btn-ghost { @apply bg-stone-200 text-stone-800 hover:bg-stone-300; }
+.btn-danger { @apply bg-rose-600 text-white hover:bg-rose-500; }
+.btn-success { @apply bg-emerald-600 text-white hover:bg-emerald-500; }
+.pill { @apply px-2 py-1 rounded-full text-xs; }
+.pill-active { @apply bg-sky-200 text-sky-900; }
