@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { NavLink, Routes, Route } from 'react-router-dom'
 import Papa from 'papaparse'
-import { fetchSheetCSV } from './utils/sheets.js'
 
 const currency = (n) => (Number(n)||0).toLocaleString(undefined, { style: 'currency', currency: 'USD' })
 const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
@@ -42,7 +41,8 @@ export default function App(){
   }
   const loadSheet = async () => {
     if (!sheetUrl) return;
-    const text = await fetchSheetCSV(sheetUrl);
+    const res = await fetch(sheetUrl, { cache: 'no-store' })
+    const text = await res.text()
     const parsed = Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true });
     setSheetRows(parsed.data||[]);
   }
@@ -84,9 +84,7 @@ export default function App(){
 }
 
 function Nav({ to, children }){
-  return (
-    <NavLink to={to} className={({isActive})=> `block px-3 py-2 rounded-xl text-sm ${isActive?'bg-stone-200 font-semibold':'hover:bg-stone-200'}`}>{children}</NavLink>
-  )
+  return <NavLink to={to} className={({isActive})=> `block px-3 py-2 rounded-xl text-sm ${isActive?'bg-stone-200 font-semibold':'hover:bg-stone-200'}`}>{children}</NavLink>
 }
 
 function Dashboard({ income, bills }){
@@ -97,7 +95,7 @@ function Dashboard({ income, bills }){
   const byMonth = (rows, key) => {
     const map = new Map(months.map((_,i)=> [i,0]))
     rows.forEach(r=> {
-      const d = new Date(key==='income'? r.date : r.due)
+      const d = new Date(r[key==='income'?'date':'due'])
       if (!isNaN(d)) map.set(d.getMonth(), (map.get(d.getMonth())||0) + Number(r.amount||0))
     })
     return months.map((_,i)=> map.get(i))
@@ -120,46 +118,13 @@ function Dashboard({ income, bills }){
     </div>
   )
 }
+function KPI({ title, value, positive }){ return (<div className="bg-white rounded-2xl shadow-sm p-4"><div className="text-sm text-stone-500">{title}</div><div className={`text-3xl font-semibold ${positive?'text-emerald-700':''}`}>{value}</div></div>) }
+function Card({ title, children }){ return (<div className="bg-white rounded-2xl shadow-sm p-4"><div className="text-base font-semibold mb-2">{title}</div>{children}</div>) }
+function MiniBars({ labels, values, max, color}){ return (<div className="grid grid-cols-12 gap-2 items-end min-h-[140px]">{values.map((v,i)=>(<div key={i} className="flex flex-col items-center gap-1"><div className={`w-full rounded-t-lg ${color}`} style={{height:`${Math.max(6,(v/max)*120)}px`}}></div><span className="text-[10px] text-stone-500">{labels[i]}</span></div>))}</div>) }
 
-function KPI({ title, value, positive }){
-  return (
-    <div className="bg-white rounded-2xl shadow-sm p-4">
-      <div className="text-sm text-stone-500">{title}</div>
-      <div className={`text-3xl font-semibold ${positive?'text-emerald-700':''}`}>{value}</div>
-    </div>
-  )
-}
-function Card({ title, children }){
-  return <div className="bg-white rounded-2xl shadow-sm p-4"><div className="text-base font-semibold mb-2">{title}</div>{children}</div>
-}
-function MiniBars({ labels, values, max, color }){
-  return (
-    <div className="grid grid-cols-12 gap-2 items-end min-h-[140px]">
-      {values.map((v,i)=> (
-        <div key={i} className="flex flex-col items-center gap-1">
-          <div className={`w-full rounded-t-lg ${color}`} style={{height: `${Math.max(6,(v/max)*120)}px`}}></div>
-          <span className="text-[10px] text-stone-500">{labels[i]}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function CategoriesPage({ rows, setRows }){
-  return <TablePage title="Categories" rows={rows} setRows={setRows}
-    columns={[{key:'name',label:'Name'},{key:'type',label:'Type'}]}
-    filters={[...new Set(rows.map(r=> r.type))]} pillField="type" />
-}
-function IncomePage({ rows, setRows }){
-  return <TablePage title="Income" rows={rows} setRows={setRows}
-    columns={[{key:'date',label:'Date'},{key:'source',label:'Source'},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'tags',label:'Tags',render:(v=[])=> <div className='flex gap-1 flex-wrap'>{(v||[]).map((t,i)=> <span key={i} className='px-2 py-0.5 bg-stone-200 rounded-full text-xs'>{t}</span>)}</div>} ]}
-    filters={[...new Set(rows.flatMap(r=> r.tags||[]))]} pillField="tags" />
-}
-function BillsPage({ rows, setRows }){
-  return <TablePage title="Bills" rows={rows} setRows={setRows}
-    columns={[{key:'due',label:'Due Date'},{key:'name',label:'Bill'},{key:'category',label:'Category'},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'status',label:'Status'}]}
-    filters={[...new Set(rows.map(r=> r.status))]} pillField="status" />
-}
+function CategoriesPage({ rows, setRows }){ return (<TablePage title="Categories" rows={rows} setRows={setRows} columns={[{key:'name',label:'Name'},{key:'type',label:'Type'}]} filters={[...new Set(rows.map(r=> r.type))]} pillField="type" />) }
+function IncomePage({ rows, setRows }){ return (<TablePage title="Income" rows={rows} setRows={setRows} columns={[{key:'date',label:'Date'},{key:'source',label:'Source'},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'tags',label:'Tags',render:(v=[])=> <div className='flex gap-1 flex-wrap'>{(v||[]).map((t,i)=> <span key={i} className='px-2 py-0.5 bg-stone-200 rounded-full text-xs'>{t}</span>)}</div>}]} filters={[...new Set(rows.flatMap(r=> r.tags||[]))]} pillField="tags" />) }
+function BillsPage({ rows, setRows }){ return (<TablePage title="Bills" rows={rows} setRows={setRows} columns={[{key:'due',label:'Due Date'},{key:'name',label:'Bill'},{key:'category',label:'Category'},{key:'amount',label:'Amount',type:'number',render:(v)=> currency(Number(v))},{key:'status',label:'Status'}]} filters={[...new Set(rows.map(r=> r.status))]} pillField="status" />) }
 
 function TablePage({ title, columns, rows, setRows, filters=[], pillField }){
   const [sort, setSort] = useState({ key: columns[0].key, dir: 'asc' })
@@ -173,63 +138,30 @@ function TablePage({ title, columns, rows, setRows, filters=[], pillField }){
       return String(val) === String(active)
     })
   }, [sorted, active, pillField])
-
   const [form, setForm] = useState(Object.fromEntries(columns.map(c=> [c.key, ''])))
   const addRow = () => { setRows(prev=> [...prev, { id: crypto.randomUUID(), ...form }]); setForm(Object.fromEntries(columns.map(c=> [c.key, '']))) }
   const remove = (id) => setRows(prev => prev.filter(r => r.id !== id))
-
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">{title}</h2>
-      </div>
-
-      {filters.length>0 && (
-        <div className="flex flex-wrap gap-2">
-          <button className={`px-2 py-1 rounded-full text-xs ${active==='all'?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive('all')}>All</button>
-          {filters.map((f,i)=> (
-            <button key={i} className={`px-2 py-1 rounded-full text-xs ${active===f?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive(f)}>{f}</button>
-          ))}
-        </div>
-      )}
-
+      <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">{title}</h2></div>
+      {filters.length>0 && (<div className="flex flex-wrap gap-2"><button className={`px-2 py-1 rounded-full text-xs ${active==='all'?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive('all')}>All</button>{filters.map((f,i)=> (<button key={i} className={`px-2 py-1 rounded-full text-xs ${active===f?'bg-stone-800 text-white':'bg-stone-200'}`} onClick={()=> setActive(f)}>{f}</button>))}</div>)}
       <div className="overflow-x-auto bg-white rounded-2xl shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-stone-500">
-              {columns.map(col => (
-                <th key={col.key} className="py-2 px-3 cursor-pointer" onClick={()=> setSort(s=> ({ key: col.key, dir: s.dir==='asc'?'desc':'asc' }))}>
-                  {col.label}
-                </th>
-              ))}
-              <th className="py-2 px-3">Actions</th>
-            </tr>
-          </thead>
+        <table className="w-full text-sm"><thead><tr className="text-left text-stone-500">
+          {columns.map(col => (<th key={col.key} className="py-2 px-3 cursor-pointer" onClick={()=> setSort(s=> ({ key: col.key, dir: s.dir==='asc'?'desc':'asc' }))}>{col.label}</th>))}
+          <th className="py-2 px-3">Actions</th></tr></thead>
           <tbody>
-            {filtered.map(row => (
-              <tr key={row.id} className="border-t border-stone-200">
-                {columns.map(col => (
-                  <td key={col.key} className="py-2 px-3 whitespace-nowrap">{col.render? col.render(row[col.key], row) : String(row[col.key] ?? '')}</td>
-                ))}
-                <td className="py-2 px-3">
-                  <button className="text-rose-600 hover:underline" onClick={()=> remove(row.id)}>Delete</button>
-                </td>
-              </tr>
-            ))}
+            {filtered.map(row => (<tr key={row.id} className="border-t border-stone-200">
+              {columns.map(col => (<td key={col.key} className="py-2 px-3 whitespace-nowrap">{col.render? col.render(row[col.key], row) : String(row[col.key] ?? '')}</td>))}
+              <td className="py-2 px-3"><button className="text-rose-600 hover:underline" onClick={()=> remove(row.id)}>Delete</button></td></tr>))}
           </tbody>
         </table>
       </div>
-
       <div className="bg-white rounded-2xl shadow-sm p-4">
         <div className="font-medium mb-2">Add New</div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
-          {columns.map(col => (
-            <input key={col.key} className="px-3 py-2 rounded-lg bg-stone-100 text-sm" placeholder={col.label} type={col.type==='number'?'number':'text'} value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: col.type==='number'? Number(e.target.value) : e.target.value}))}/>
-          ))}
+          {columns.map(col => (<input key={col.key} className="px-3 py-2 rounded-lg bg-stone-100 text-sm" placeholder={col.label} type={col.type==='number'?'number':'text'} value={form[col.key]} onChange={(e)=> setForm(f=> ({...f, [col.key]: col.type==='number'? Number(e.target.value) : e.target.value}))}/>))}
         </div>
-        <div className="pt-2">
-          <button className="px-3 py-2 rounded-lg bg-stone-800 text-white text-sm" onClick={addRow}>Add</button>
-        </div>
+        <div className="pt-2"><button className="px-3 py-2 rounded-lg bg-stone-800 text-white text-sm" onClick={addRow}>Add</button></div>
       </div>
     </div>
   )

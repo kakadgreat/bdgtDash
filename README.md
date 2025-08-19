@@ -1,15 +1,7 @@
 # Budget Dashboard (React + Vite + Tailwind) — Netlify Ready
-Minimal, muted budget dashboard.
+## Deploy steps
+1) Push to GitHub
+2) Netlify: New site → Import from GitHub
+3) Build: `npm run build`, Publish: `dist`
 
-## Run
-npm i && npm run dev
-
-## Build
-npm run build
-
-## Netlify
-Build: npm run build
-Publish: dist
-
-## Google Sheets (published CSV)
-File → Share → Publish to web → CSV → paste URL in sidebar and click Load.
+If Netlify fails on deps, ensure `@vitejs/plugin-react` is installed (already included) and Node 18/20 is used.
